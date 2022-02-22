@@ -61,22 +61,18 @@ app.post('/games/:id/join', (req, res) => {
             {
                 number: 0,
                 position: null,
-                color: null
             },
             {
                 number: 1,
                 position: null,
-                color: null
             },
             {
                 number: 2,
                 position: null,
-                color: null
             },
             {
                 number: 3,
                 position: null,
-                color: null
             },
         ]
     });
