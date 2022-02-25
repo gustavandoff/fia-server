@@ -2,10 +2,18 @@ const express = require('express');
 const { randomBytes } = require('crypto');
 const bodyParser = require('body-parser');
 
+const session = require('express-session');
+
 const cors = require('cors');
 const app = express();
+
 app.use(cors());
 app.use(bodyParser.json());
+app.use(session({
+    secret: randomBytes(4).toString('hex'),
+    resave: true,
+    saveUninitialized: false
+}));
 
 const games = {};
 const users = {};
@@ -13,6 +21,16 @@ const users = {};
 const WAITING = 'WAITING';
 const PLAYING = 'PLAYING';
 const FINISHED = 'FINISHED';
+
+app.post('/login', (req, res) => {
+    req.session.loggedIn = true;
+    //res.status(201).send(users[id]);
+});
+
+app.post('/logout', (req, res) => {
+    req.session.loggedIn = false;
+    //res.status(201).send(users[id]);
+});
 
 app.get('/users/:username', (req, res) => {
     res.status(200).send(users[req.params.username]);
