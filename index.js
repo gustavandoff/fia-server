@@ -23,8 +23,16 @@ const PLAYING = 'PLAYING';
 const FINISHED = 'FINISHED';
 
 app.post('/login', (req, res) => {
+
+    const { username, password } = req.body;
+
+
     req.session.loggedIn = true;
-    //res.status(201).send(users[id]);
+    res.status(201).send(true);
+});
+
+app.get('/login', (req, res) => {
+    res.status(200).send(req.session.loggedIn === true);
 });
 
 app.post('/logout', (req, res) => {
