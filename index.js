@@ -26,13 +26,24 @@ app.post('/login', (req, res) => {
 
     const { username, password } = req.body;
 
+    const thisUser = Object.values(users).find(u => u.username === username)
+
+    if (!thisUser) {
+        res.status(400).send('Ditt användarnamn eller lösenord är felaktigt');
+        return;
+    }
+    
+    if (thisUser.password !== password){
+        res.status(400).send('Ditt användarnamn eller lösenord är felaktigt');
+        return;
+    }
 
     req.session.loggedIn = true;
     res.status(201).send(true);
 });
 
 app.get('/login', (req, res) => {
-    res.status(200).send(req.session.loggedIn === true);
+    res.status(200).send(req.session.loggedIn);
 });
 
 app.post('/logout', (req, res) => {
@@ -46,9 +57,14 @@ app.get('/users/:username', (req, res) => {
 
 app.post('/users', (req, res) => {
     const id = randomBytes(4).toString('hex');
-    const { username, displayname, password, confpassword } = req.body;
+    const { username, displayname, password, confPassword } = req.body;
 
-    if (password !== confpassword) {
+    if (!username || !displayname || !password || !confPassword) {
+        res.status(400).send('Vänligen fyll i alla fält');
+        return;
+    }
+
+    if (password !== confPassword) {
         res.status(400).send('Lösenorden matcher inte');
         return;
     }
