@@ -1,22 +1,28 @@
 const express = require('express');
 const { randomBytes } = require('crypto');
 const bodyParser = require('body-parser');
-
 const session = require('express-session');
-
 const cors = require('cors');
+
 const app = express();
 
 app.use(cors());
 app.use(bodyParser.json());
+
+app.set("trust proxy", 1);
+
 app.use(session({
     secret: randomBytes(4).toString('hex'),
     resave: true,
-    saveUninitialized: false
+    saveUninitialized: false,
+    cookie: {
+        httpOnly: true,
+        maxAge: 3600000
+    }
 }));
 
 const games = {};
-const users = {};
+const users = { gustav: { username: 'gustav', displayname: 'Gustav', password: '123' } };
 
 const WAITING = 'WAITING';
 const PLAYING = 'PLAYING';
@@ -32,23 +38,36 @@ app.post('/login', (req, res) => {
         res.status(400).send('Ditt användarnamn eller lösenord är felaktigt');
         return;
     }
-    
-    if (thisUser.password !== password){
+
+    if (thisUser.password !== password) {
         res.status(400).send('Ditt användarnamn eller lösenord är felaktigt');
         return;
     }
 
     req.session.loggedIn = true;
+    req.session.user = thisUser;
+    console.log(req.session.loggedIn);
+    console.log(req.session.user);
     res.status(201).send(true);
 });
 
-app.get('/login', (req, res) => {
-    res.status(200).send(req.session.loggedIn);
+app.get('/user', (req, res) => {
+    console.log(req.session.loggedIn);
+    console.log(req.session.user);
+    if (req.session.loggedIn) {
+        res.status(200).send(req.session.user);//req.session.user);
+        return;
+    }
+
+    res.status(200).send(false);
 });
 
 app.post('/logout', (req, res) => {
-    req.session.loggedIn = false;
-    //res.status(201).send(users[id]);
+    req.session.destroy();
+});
+
+app.get('/users', (req, res) => {
+    res.status(200).send(users);
 });
 
 app.get('/users/:username', (req, res) => {
@@ -56,7 +75,6 @@ app.get('/users/:username', (req, res) => {
 });
 
 app.post('/users', (req, res) => {
-    const id = randomBytes(4).toString('hex');
     const { username, displayname, password, confPassword } = req.body;
 
     if (!username || !displayname || !password || !confPassword) {
@@ -74,11 +92,11 @@ app.post('/users', (req, res) => {
         return;
     }
 
-    users[id] = {
-        id, username, displayname, password
+    users[username] = {
+        username, displayname, password
     }
 
-    res.status(201).send(users[id]);
+    res.status(201).send(users[username]);
 });
 
 app.post('/games/:id/join', (req, res) => {
