@@ -1,28 +1,16 @@
 const express = require('express');
 const { randomBytes } = require('crypto');
 const bodyParser = require('body-parser');
-const session = require('express-session');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 
 const app = express();
-
+app.set('trust proxy', true);
 app.use(cors());
 app.use(bodyParser.json());
 
-app.set("trust proxy", 1);
-
-app.use(session({
-    secret: randomBytes(4).toString('hex'),
-    resave: true,
-    saveUninitialized: false,
-    cookie: {
-        httpOnly: true,
-        maxAge: 3600000
-    }
-}));
-
 const games = {};
-const users = { gustav: { username: 'gustav', displayname: 'Gustav', password: '123' } };
+const users = { gustav: { username: 'gustav', displayname: 'Gustav', password: '123', jwt: null } };
 
 const WAITING = 'WAITING';
 const PLAYING = 'PLAYING';
@@ -32,38 +20,62 @@ app.post('/login', (req, res) => {
 
     const { username, password } = req.body;
 
-    const thisUser = Object.values(users).find(u => u.username === username)
-
-    if (!thisUser) {
-        res.status(400).send('Ditt användarnamn eller lösenord är felaktigt');
-        return;
+    if (!Object.keys(users).includes(username)) {
+        return res.send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
     }
+
+    const thisUser = Object.values(users).find(u => u.username === username);
 
     if (thisUser.password !== password) {
-        res.status(400).send('Ditt användarnamn eller lösenord är felaktigt');
-        return;
+        return res.send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
     }
 
-    req.session.loggedIn = true;
-    req.session.user = thisUser;
-    console.log(req.session.loggedIn);
-    console.log(req.session.user);
-    res.status(201).send(true);
+    const userJwt = jwt.sign({
+        username: thisUser.username,
+        displayname: thisUser.displayname
+    }, 'asdf');
+
+    thisUser.jwt = userJwt;
+
+    const result = { ...thisUser };
+    delete result.password;
+
+    res.status(200).send({ currentUser: result });
 });
 
-app.get('/user', (req, res) => {
-    console.log(req.session.loggedIn);
-    console.log(req.session.user);
-    if (req.session.loggedIn) {
-        res.status(200).send(req.session.user);//req.session.user);
-        return;
+app.get('/currentuser', (req, res) => {
+    const token = getToken(req);
+
+    if (!token) {
+        return res.status(401).send({ jwt: undefined });
     }
 
-    res.status(200).send(false);
+    try {
+        const payload = jwt.verify(
+            token,
+            'asdf'
+        );
+        const exists = Object.values(users).find(u => u.jwt === token);
+        if (!exists) {
+            return res.status(401).send({ currentUser: undefined });
+        }
+        res.send({ currentUser: payload });
+    } catch (err) {
+        console.error('err:', err);
+        return res.status(401).send({ currentUser: undefined });
+    }
 });
 
 app.post('/logout', (req, res) => {
-    req.session.destroy();
+
+    const token = getToken(req);
+    if (!token) {
+        return res.status(401).send();
+    }
+    const currentUser = Object.values(users).find(u => u.jwt === token);
+    currentUser.jwt = null;
+
+    res.status(200).send();
 });
 
 app.get('/users', (req, res) => {
@@ -74,7 +86,7 @@ app.get('/users/:username', (req, res) => {
     res.status(200).send(users[req.params.username]);
 });
 
-app.post('/users', (req, res) => {
+app.post('/signup', (req, res) => {
     const { username, displayname, password, confPassword } = req.body;
 
     if (!username || !displayname || !password || !confPassword) {
@@ -96,7 +108,17 @@ app.post('/users', (req, res) => {
         username, displayname, password
     }
 
-    res.status(201).send(users[username]);
+    const userJwt = jwt.sign({
+        username: username,
+        displayname: displayname
+    }, 'asdf');
+
+    thisUser.jwt = userJwt;
+
+    const result = { ...thisUser };
+    delete result.password;
+
+    res.status(200).send({ currentUser: result });
 });
 
 app.post('/games/:id/join', (req, res) => {
@@ -161,6 +183,17 @@ app.get('/dice', (req, res) => {
     const d = Math.floor(Math.random() * 6) + 1;
     res.send(200, d);
 });
+
+const getToken = (req) => {
+    const authorization = req?.headers?.authorization;
+    
+    if (!authorization) {
+        return;
+    }
+    const tokens = authorization.split(' ');
+
+    return tokens.length > 1 ? tokens[1] : undefined;
+}
 
 app.listen(4000, () => {
     console.log('Listening on 4000');
