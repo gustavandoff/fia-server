@@ -121,21 +121,21 @@ app.post('/signup', (req, res) => {
     res.status(200).send({ currentUser: result });
 });
 
-app.post('/games/:id/join', (req, res) => {
-    const game = games[req.params.id];
+app.post('/joingame', (req, res) => {
+    const game = games[req.body.gameName];
     if (!game) {
-        res.status(400).send('Spelet finns inte');
+        return res.status(400).send('Spelet finns inte');
     }
 
     if (game.players.length === game.maxPlayers) {
-        res.status(400).send('Max antal spelare redan uppnått');
+        return res.status(400).send('Max antal spelare redan uppnått');
     }
 
-    if (game.players.find(p => p.username) === req.body.username) {
-        res.status(400).send('Du är redan med i spelet');
+    if (game.players.length > 0 && game.players[req.body.username]) {
+        return res.status(400).send('Du är redan med i spelet');
     }
 
-    game.players.push({
+    game.players[req.body.username] = {
         username: req.body.username,
         playerNumber: null,
         color: null,
@@ -157,7 +157,7 @@ app.post('/games/:id/join', (req, res) => {
                 position: null,
             },
         ]
-    });
+    };
 
     res.status(200).send('Du är med i spelet');
 });
@@ -167,16 +167,19 @@ app.get('/games', (req, res) => {
 });
 
 app.post('/games', (req, res) => {
-    const id = randomBytes(4).toString('hex');
-    const { title, maxPlayers } = req.body;
+    const { gameName, maxPlayers } = req.body;
 
-    games[id] = {
-        id, title, maxPlayers,
-        players: [],
+    if (games[gameName]) {
+        return res.status(400).send('Spel med samma namn finns redan');
+    }
+
+    games[gameName] = {
+        gameName, maxPlayers,
+        players: {},
         status: WAITING,
     }
 
-    res.status(201).send(games[id]);
+    res.status(201).send(games[gameName]);
 });
 
 app.get('/dice', (req, res) => {
