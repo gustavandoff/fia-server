@@ -113,6 +113,7 @@ app.post('/signup', (req, res) => {
         displayname: displayname
     }, 'asdf');
 
+    const thisUser = Object.values(users).find(u => u.username === username);
     thisUser.jwt = userJwt;
 
     const result = { ...thisUser };
