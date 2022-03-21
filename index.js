@@ -3,28 +3,37 @@ const { randomBytes } = require('crypto');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const { MongoClient, ServerApiVersion } = require('mongodb');
+const uri = "mongodb+srv://gustav:h5Q4PBkJHVRG@cluster0.aljlo.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
 
 const app = express();
 app.set('trust proxy', true);
 app.use(cors());
 app.use(bodyParser.json());
 
-const games = {};
-const users = { gustav: { username: 'gustav', displayname: 'Gustav', password: '123', jwt: null } };
-
 const WAITING = 'WAITING';
 const PLAYING = 'PLAYING';
 const FINISHED = 'FINISHED';
 
-app.post('/login', (req, res) => {
+const getDb = async () => {
+    return (await MongoClient.connect(uri, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+        serverApi: ServerApiVersion.v1
+    })).db('fia');
+}
+
+app.post('/login', async (req, res) => {
 
     const { username, password } = req.body;
 
-    if (!Object.keys(users).includes(username)) {
+    const db = await getDb();
+
+    const thisUser = await db.collection('users').findOne({ username: username });
+
+    if (!thisUser) {
         return res.send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
     }
-
-    const thisUser = Object.values(users).find(u => u.username === username);
 
     if (thisUser.password !== password) {
         return res.send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
@@ -35,15 +44,18 @@ app.post('/login', (req, res) => {
         displayname: thisUser.displayname
     }, 'asdf');
 
-    thisUser.jwt = userJwt;
+    await db.collection('users').updateOne({ username: username }, { $set: { jwt: userJwt } });
 
-    const result = { ...thisUser };
-    delete result.password;
+    const result = {
+        username: thisUser.username,
+        displayname: thisUser.displayname,
+        jwt: userJwt
+    };
 
     res.status(200).send({ currentUser: result });
 });
 
-app.get('/currentuser', (req, res) => {
+app.get('/currentuser', async (req, res) => {
     const token = getToken(req);
 
     if (!token) {
@@ -55,7 +67,9 @@ app.get('/currentuser', (req, res) => {
             token,
             'asdf'
         );
-        const exists = Object.values(users).find(u => u.jwt === token);
+        const db = await getDb();
+        const exists = await db.collection('users').findOne({ jwt: token });
+        //const exists = Object.values(users).find(u => u.jwt === token);
         if (!exists) {
             return res.status(401).send({ currentUser: undefined });
         }
@@ -66,27 +80,45 @@ app.get('/currentuser', (req, res) => {
     }
 });
 
-app.post('/logout', (req, res) => {
-
+app.post('/logout', async (req, res) => {
     const token = getToken(req);
     if (!token) {
         return res.status(401).send();
     }
-    const currentUser = Object.values(users).find(u => u.jwt === token);
-    currentUser.jwt = null;
+
+    const db = await getDb();
+    const currentUser = await db.collection('users').findOne({ jwt: token });
+
+    await db.collection('users').updateOne({ username: currentUser.username }, { $set: { jwt: null } });
 
     res.status(200).send();
 });
 
-app.get('/users', (req, res) => {
-    res.status(200).send(users);
+app.get('/users', async (req, res) => {
+    const db = await getDb();
+    const users = await db.collection('users').find({}).toArray();
+    const result = {};
+
+    users.forEach(element => {
+        result[element.username] = element;
+    });
+
+    res.status(200).send(result);
 });
 
-app.get('/users/:username', (req, res) => {
-    res.status(200).send(users[req.params.username]);
+app.get('/users/:username', async (req, res) => {
+    const db = await getDb();
+    const users = await db.collection('users').find({}).toArray();
+    const result = {};
+
+    users.forEach(element => {
+        result[element.username] = element;
+    });
+
+    res.status(200).send(result[req.params.username]);
 });
 
-app.post('/signup', (req, res) => {
+app.post('/signup', async (req, res) => {
     const { username, displayname, password, confPassword } = req.body;
 
     if (!username || !displayname || !password || !confPassword) {
@@ -99,44 +131,44 @@ app.post('/signup', (req, res) => {
         return;
     }
 
-    if (Object.values(users).find(u => u.username === username)) {
+    const db = await getDb();
+    const thisUser = await db.collection('users').findOne({ username });
+
+    if (thisUser) {
         res.status(400).send('Användarnamnet finns redan');
         return;
     }
 
-    users[username] = {
-        username, displayname, password
-    }
+    const userJwt = jwt.sign({ username, displayname }, 'asdf');
 
-    const userJwt = jwt.sign({
-        username: username,
-        displayname: displayname
-    }, 'asdf');
+    await db.collection('users').insertOne({ username, displayname, password, jwt: userJwt });
 
-    const thisUser = Object.values(users).find(u => u.username === username);
-    thisUser.jwt = userJwt;
-
-    const result = { ...thisUser };
-    delete result.password;
+    const result = {
+        username,
+        displayname,
+        jwt: userJwt
+    };
 
     res.status(200).send({ currentUser: result });
 });
 
-app.post('/joingame', (req, res) => {
-    const game = games[req.body.gameName];
-    if (!game) {
+app.post('/joingame', async (req, res) => {
+    const db = await getDb();
+    const thisGame = await db.collection('games').findOne({gameName: req.body.gameName});
+
+    if (!thisGame) {
         return res.status(400).send('Spelet finns inte');
     }
 
-    if (game.players.length === game.maxPlayers) {
+    if (thisGame.players.length === thisGame.maxPlayers) {
         return res.status(400).send('Max antal spelare redan uppnått');
     }
 
-    if (game.players.length > 0 && game.players[req.body.username]) {
+    if (thisGame.players.length > 0 && thisGame.players[req.body.username]) {
         return res.status(400).send('Du är redan med i spelet');
     }
 
-    game.players[req.body.username] = {
+    thisGame.players[req.body.username] = {
         username: req.body.username,
         playerNumber: null,
         color: null,
@@ -160,27 +192,38 @@ app.post('/joingame', (req, res) => {
         ]
     };
 
+    await db.collection('games').updateOne({ gameName: req.body.gameName }, { $set: { players: thisGame.players } });
+
     res.status(200).send('Du är med i spelet');
 });
 
-app.get('/games', (req, res) => {
-    res.send(200, games);
+app.get('/games', async (req, res) => {
+    const db = await getDb();
+    const games = await db.collection('games').find({}).toArray();
+    const result = {};
+
+    games.forEach(element => {
+        result[element.gameName] = element;
+    });
+
+    res.send(200, result);
 });
 
-app.post('/games', (req, res) => {
+app.post('/games', async (req, res) => {
     const { gameName, maxPlayers } = req.body;
 
-    if (games[gameName]) {
+    const db = await getDb();
+    const thisGame = await db.collection('games').findOne({gameName});
+
+    if (thisGame) {
         return res.status(400).send('Spel med samma namn finns redan');
     }
 
-    games[gameName] = {
-        gameName, maxPlayers,
-        players: {},
-        status: WAITING,
-    }
+    await db.collection('games').insertOne({ gameName, maxPlayers, players : {}, status: WAITING });
 
-    res.status(201).send(games[gameName]);
+    const result = { gameName, maxPlayers, players : {}, status: WAITING };
+
+    res.status(201).send(result);
 });
 
 app.get('/dice', (req, res) => {
@@ -190,7 +233,7 @@ app.get('/dice', (req, res) => {
 
 const getToken = (req) => {
     const authorization = req?.headers?.authorization;
-    
+
     if (!authorization) {
         return;
     }
