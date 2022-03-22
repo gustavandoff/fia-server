@@ -3,13 +3,29 @@ const { randomBytes } = require('crypto');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const uri = "mongodb+srv://gustav:h5Q4PBkJHVRG@cluster0.aljlo.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
+
+const http = require('http');
 
 const app = express();
 app.set('trust proxy', true);
 app.use(cors());
 app.use(bodyParser.json());
+
+const socketUtils = require("./utils/socketUtils");
+
+const server = http.createServer(app);
+const io = socketUtils.sio(server);
+socketUtils.connection(io);
+
+const socketIOMiddleware = (req, res, next) => {
+    req.io = io;
+
+    next();
+};
+
 
 const WAITING = 'WAITING';
 const PLAYING = 'PLAYING';
@@ -23,6 +39,11 @@ const getDb = async () => {
     })).db('fia');
 }
 
+app.use("/api/v1/hello", socketIOMiddleware, (req, res) => {
+    req.io.emit("message", `Hello, ${req.originalUrl}`);
+    res.send("hello world!");
+});
+
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
@@ -30,11 +51,11 @@ app.post('/login', async (req, res) => {
     const thisUser = await db.collection('users').findOne({ username });
 
     if (!thisUser) {
-        return res.send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
+        return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
     }
 
     if (thisUser.password !== password) {
-        return res.send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
+        return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
     }
 
     const userJwt = jwt.sign({
