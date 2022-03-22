@@ -24,12 +24,10 @@ const getDb = async () => {
 }
 
 app.post('/login', async (req, res) => {
-
     const { username, password } = req.body;
 
     const db = await getDb();
-
-    const thisUser = await db.collection('users').findOne({ username: username });
+    const thisUser = await db.collection('users').findOne({ username });
 
     if (!thisUser) {
         return res.send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
@@ -44,7 +42,7 @@ app.post('/login', async (req, res) => {
         displayname: thisUser.displayname
     }, 'asdf');
 
-    await db.collection('users').updateOne({ username: username }, { $set: { jwt: userJwt } });
+    await db.collection('users').updateOne({ username }, { $set: { jwt: userJwt } });
 
     const result = {
         username: thisUser.username,
@@ -154,7 +152,8 @@ app.post('/signup', async (req, res) => {
 
 app.post('/joingame', async (req, res) => {
     const db = await getDb();
-    const thisGame = await db.collection('games').findOne({gameName: req.body.gameName});
+    const thisGame = await db.collection('games').findOne({ gameName: req.body.gameName });
+    const thisUser = await db.collection('users').findOne({ username: req.body.username });
 
     if (!thisGame) {
         return res.status(400).send('Spelet finns inte');
@@ -168,8 +167,9 @@ app.post('/joingame', async (req, res) => {
         return res.status(400).send('Du är redan med i spelet');
     }
 
-    thisGame.players[req.body.username] = {
-        username: req.body.username,
+    thisGame.players[thisUser.username] = {
+        username: thisUser.username,
+        displayname: thisUser.displayname,
         playerNumber: null,
         color: null,
         pieces: [
@@ -192,9 +192,20 @@ app.post('/joingame', async (req, res) => {
         ]
     };
 
-    await db.collection('games').updateOne({ gameName: req.body.gameName }, { $set: { players: thisGame.players } });
+    await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { players: thisGame.players } });
 
     res.status(200).send('Du är med i spelet');
+});
+
+app.get('/games/:gameName', async (req, res) => {
+    const db = await getDb();
+    const game = await db.collection('games').findOne({ gameName: req.params.gameName });
+
+    if (!game) {
+        return res.status(400).send('Spelet finns inte');
+    }
+
+    res.send(200, game);
 });
 
 app.get('/games', async (req, res) => {
@@ -213,15 +224,15 @@ app.post('/games', async (req, res) => {
     const { gameName, maxPlayers } = req.body;
 
     const db = await getDb();
-    const thisGame = await db.collection('games').findOne({gameName});
+    const thisGame = await db.collection('games').findOne({ gameName });
 
     if (thisGame) {
         return res.status(400).send('Spel med samma namn finns redan');
     }
 
-    await db.collection('games').insertOne({ gameName, maxPlayers, players : {}, status: WAITING });
+    await db.collection('games').insertOne({ gameName, maxPlayers, players: {}, status: WAITING });
 
-    const result = { gameName, maxPlayers, players : {}, status: WAITING };
+    const result = { gameName, maxPlayers, players: {}, status: WAITING };
 
     res.status(201).send(result);
 });
