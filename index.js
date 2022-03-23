@@ -8,28 +8,28 @@ const { MongoClient, ServerApiVersion } = require('mongodb');
 const uri = "mongodb+srv://gustav:h5Q4PBkJHVRG@cluster0.aljlo.mongodb.net/myFirstDatabase?retryWrites=true&w=majority";
 
 const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
 app.set('trust proxy', true);
 app.use(cors());
 app.use(bodyParser.json());
 
-const socketUtils = require("./utils/socketUtils");
-
 const server = http.createServer(app);
-const io = socketUtils.sio(server);
-socketUtils.connection(io);
 
-const socketIOMiddleware = (req, res, next) => {
-    req.io = io;
+const io = new Server(server, {
+    cors: {
+        origin: 'http://localhost:3000'
+    }
+});
 
-    next();
-};
-
+// Constants
 
 const WAITING = 'WAITING';
 const PLAYING = 'PLAYING';
 const FINISHED = 'FINISHED';
+
+// Functions
 
 const getDb = async () => {
     return (await MongoClient.connect(uri, {
@@ -39,10 +39,147 @@ const getDb = async () => {
     })).db('fia');
 }
 
-app.use("/api/v1/hello", socketIOMiddleware, (req, res) => {
-    req.io.emit("message", `Hello, ${req.originalUrl}`);
-    res.send("hello world!");
+const getToken = (req) => {
+    const authorization = req?.headers?.authorization;
+
+    if (!authorization) {
+        return;
+    }
+    const tokens = authorization.split(' ');
+
+    return tokens.length > 1 ? tokens[1] : undefined;
+}
+
+// Socket events
+
+io.on('connection', (socket) => {
+    console.log('User connected', socket.id);
+
+    socket.on('joinGame', async (gameName) => {
+        const db = await getDb();
+        const thisGame = await db.collection('games').findOne({ gameName });
+
+        socket.join(gameName);
+        console.log(`User with ID: ${socket.id} joined game ${gameName}`);
+        socket.to(thisGame.gameName).emit('updateGame', thisGame);
+    });
+
+    socket.on('startGame', async (data) => {
+        const thisUser = data.user;
+        const token = thisUser?.jwt;
+        const thisGame = data.game;
+        const players = thisGame.players;
+
+        if (!token) {
+            return;
+        }
+
+        try {
+            const payload = jwt.verify(
+                token,
+                'asdf'
+            );
+            const db = await getDb();
+            const exists = await db.collection('users').findOne({ jwt: token });
+
+            if (!exists) {
+                console.log('Spelet finns inte');
+                return;
+            }
+
+            const game = await db.collection('games').findOne({ gameName: thisGame.gameName });
+            if (game?.status !== WAITING) {
+                console.log('Spelet har redan startat');
+                return;
+            }
+
+            Object.keys(players).forEach((e, i) => {
+                players[e].playerNumber = i + 1;
+                const pieces = players[e].pieces;
+                pieces[0].position = -players[e].playerNumber * 10 - 1;
+                pieces[1].position = -players[e].playerNumber * 10 - 2;
+                pieces[2].position = -players[e].playerNumber * 10 - 3;
+                pieces[3].position = -players[e].playerNumber * 10 - 4;
+            });
+
+            console.log(players);
+
+            await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { status: PLAYING, players } });
+            const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
+            console.log(thisGame);
+            console.log(updatedGame);
+            socket.to(thisGame.gameName).emit('updateGame', updatedGame);
+        } catch (err) {
+            console.error('err:', err);
+        }
+    });
+
+    socket.on('gameLobbyPickColor', async (data) => {
+        const thisUser = data.user;
+        const token = thisUser?.jwt;
+        const thisGame = data.game;
+
+        if (!token) {
+            return;
+        }
+
+        try {
+            const payload = jwt.verify(
+                token,
+                'asdf'
+            );
+            const db = await getDb();
+            const exists = await db.collection('users').findOne({ jwt: token });
+
+            if (!exists) {
+                return;
+            }
+
+            const game = await db.collection('games').findOne({ gameName: thisGame.gameName });
+            if (!game || game.status !== WAITING) {
+                return;
+            }
+
+
+            thisGame.players[thisUser.username] = {
+                username: thisUser.username,
+                displayname: thisUser.displayname,
+                playerNumber: null,
+                color: data.color,
+                pieces: [
+                    {
+                        number: 0,
+                        position: null,
+                    },
+                    {
+                        number: 1,
+                        position: null,
+                    },
+                    {
+                        number: 2,
+                        position: null,
+                    },
+                    {
+                        number: 3,
+                        position: null,
+                    },
+                ]
+            };
+
+            await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { players: thisGame.players } });
+            const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
+            socket.to(thisGame.gameName).emit('updateGame', updatedGame);
+        } catch (err) {
+            console.error('err:', err);
+        }
+    })
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected', socket.id);
+    });
 });
+
+// Routes
 
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
@@ -263,17 +400,10 @@ app.get('/dice', (req, res) => {
     res.send(200, d);
 });
 
-const getToken = (req) => {
-    const authorization = req?.headers?.authorization;
+//app.listen(4000, () => {
+//    console.log('Listening on 4000');
+//});
 
-    if (!authorization) {
-        return;
-    }
-    const tokens = authorization.split(' ');
-
-    return tokens.length > 1 ? tokens[1] : undefined;
-}
-
-app.listen(4000, () => {
+server.listen(4000, () => {
     console.log('Listening on 4000');
 });
