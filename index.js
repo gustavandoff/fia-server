@@ -58,15 +58,34 @@ io.on('connection', (socket) => {
     socket.on('joinGame', async (gameName) => {
         const dbConnection = await getMongoConnection();
         const db = dbConnection.db('fia');
-        const updatedGame = await db.collection('games').findOne({ gameName });
+        const thisGame = await db.collection('games').findOne({ gameName });
         dbConnection.close();
 
         socket.join(gameName);
 
         console.log(`User with ID: ${socket.id} joined game ${gameName}`);
 
-        socket.emit('updateGame', updatedGame); // skickar till mig själv
-        socket.to(gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
+        socket.emit('updateGame', thisGame); // skickar till mig själv
+        socket.to(gameName).emit('updateGame', thisGame); // skickar till alla andra i spelet
+    });
+
+    socket.on('leaveGame', async ({ user, game }) => {
+        const gameName = game.gameName;
+
+        const dbConnection = await getMongoConnection();
+        const db = dbConnection.db('fia');
+
+        delete game.players[user.username];
+
+        await db.collection('games').updateOne({ gameName }, { $set: { players: game.players } });
+
+        //await db.collection('games').update({ gameName }, { $unset: { description: 1 } })
+        //await db.collection('games').updateOne({ gameName }, { $unset: { players.(currentUser.username) } });
+        //db.games.update({ gameName }, { "$unset": { "values.727920": "" } });
+        //  
+        dbConnection.close();
+        socket.emit('updateGame', game); // skickar till mig själv
+        socket.to(gameName).emit('updateGame', game); // skickar till alla andra i spelet
     });
 
     socket.on('startGame', async (data) => {
