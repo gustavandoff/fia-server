@@ -31,12 +31,12 @@ const FINISHED = 'FINISHED';
 
 // Functions
 
-const getDb = async () => {
+const getMongoConnection = async () => {
     return (await MongoClient.connect(uri, {
         useNewUrlParser: true,
         useUnifiedTopology: true,
         serverApi: ServerApiVersion.v1
-    })).db('fia');
+    }));
 }
 
 const getToken = (req) => {
@@ -56,12 +56,17 @@ io.on('connection', (socket) => {
     console.log('User connected', socket.id);
 
     socket.on('joinGame', async (gameName) => {
-        const db = await getDb();
-        const thisGame = await db.collection('games').findOne({ gameName });
+        const dbConnection = await getMongoConnection();
+        const db = dbConnection.db('fia');
+        const updatedGame = await db.collection('games').findOne({ gameName });
+        dbConnection.close();
 
         socket.join(gameName);
+
         console.log(`User with ID: ${socket.id} joined game ${gameName}`);
-        socket.to(thisGame.gameName).emit('updateGame', thisGame);
+
+        socket.emit('updateGame', updatedGame); // skickar till mig själv
+        socket.to(gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
     });
 
     socket.on('startGame', async (data) => {
@@ -69,17 +74,17 @@ io.on('connection', (socket) => {
         const token = thisUser?.jwt;
         const thisGame = data.game;
         const players = thisGame.players;
+        let dbConnection;
 
-        if (!token) {
-            return;
-        }
+        if (!token) return;
 
         try {
             const payload = jwt.verify(
                 token,
                 'asdf'
             );
-            const db = await getDb();
+            dbConnection = await getMongoConnection();
+            const db = dbConnection.db('fia');
             const exists = await db.collection('users').findOne({ jwt: token });
 
             if (!exists) {
@@ -106,11 +111,13 @@ io.on('connection', (socket) => {
 
             await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { status: PLAYING, players } });
             const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
-            console.log(thisGame);
-            console.log(updatedGame);
-            socket.to(thisGame.gameName).emit('updateGame', updatedGame);
+
+            socket.emit('updateGame', updatedGame); // skickar till mig själv
+            socket.to(thisGame.gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
         } catch (err) {
             console.error('err:', err);
+        } finally {
+            dbConnection.close();
         }
     });
 
@@ -118,6 +125,8 @@ io.on('connection', (socket) => {
         const thisUser = data.user;
         const token = thisUser?.jwt;
         const thisGame = data.game;
+        let dbConnection;
+
 
         if (!token) {
             return;
@@ -128,7 +137,8 @@ io.on('connection', (socket) => {
                 token,
                 'asdf'
             );
-            const db = await getDb();
+            dbConnection = await getMongoConnection();
+            const db = dbConnection.db('fia');
             const exists = await db.collection('users').findOne({ jwt: token });
 
             if (!exists) {
@@ -139,7 +149,6 @@ io.on('connection', (socket) => {
             if (!game || game.status !== WAITING) {
                 return;
             }
-
 
             thisGame.players[thisUser.username] = {
                 username: thisUser.username,
@@ -165,12 +174,19 @@ io.on('connection', (socket) => {
                     },
                 ]
             };
-
             await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { players: thisGame.players } });
             const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
-            socket.to(thisGame.gameName).emit('updateGame', updatedGame);
+            console.log('pickColor socket1:', socket.id);
+            console.log('thisGame.gameName:', thisGame.gameName);
+
+            socket.emit('updateGame', updatedGame); // skickar till mig själv
+            socket.to(thisGame.gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
+
+            console.log('pickColor socket2:', socket.id);
         } catch (err) {
             console.error('err:', err);
+        } finally {
+            dbConnection.close();
         }
     })
 
@@ -184,14 +200,17 @@ io.on('connection', (socket) => {
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
-    const db = await getDb();
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
     const thisUser = await db.collection('users').findOne({ username });
 
     if (!thisUser) {
+        dbConnection.close();
         return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
     }
 
     if (thisUser.password !== password) {
+        dbConnection.close();
         return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
     }
 
@@ -208,11 +227,13 @@ app.post('/login', async (req, res) => {
         jwt: userJwt
     };
 
+    dbConnection.close();
     res.status(200).send({ currentUser: result });
 });
 
 app.get('/currentuser', async (req, res) => {
     const token = getToken(req);
+    let dbConnection;
 
     if (!token) {
         return res.status(401).send({ jwt: undefined });
@@ -223,7 +244,8 @@ app.get('/currentuser', async (req, res) => {
             token,
             'asdf'
         );
-        const db = await getDb();
+        dbConnection = await getMongoConnection();
+        const db = dbConnection.db('fia');
         const exists = await db.collection('users').findOne({ jwt: token });
         //const exists = Object.values(users).find(u => u.jwt === token);
         if (!exists) {
@@ -233,6 +255,8 @@ app.get('/currentuser', async (req, res) => {
     } catch (err) {
         console.error('err:', err);
         return res.status(401).send({ currentUser: undefined });
+    } finally {
+        dbConnection.close();
     }
 });
 
@@ -242,16 +266,19 @@ app.post('/logout', async (req, res) => {
         return res.status(401).send();
     }
 
-    const db = await getDb();
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
     const currentUser = await db.collection('users').findOne({ jwt: token });
 
     await db.collection('users').updateOne({ username: currentUser.username }, { $set: { jwt: null } });
 
+    dbConnection.close();
     res.status(200).send();
 });
 
 app.get('/users', async (req, res) => {
-    const db = await getDb();
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
     const users = await db.collection('users').find({}).toArray();
     const result = {};
 
@@ -259,11 +286,13 @@ app.get('/users', async (req, res) => {
         result[element.username] = element;
     });
 
+    dbConnection.close();
     res.status(200).send(result);
 });
 
 app.get('/users/:username', async (req, res) => {
-    const db = await getDb();
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
     const users = await db.collection('users').find({}).toArray();
     const result = {};
 
@@ -271,6 +300,7 @@ app.get('/users/:username', async (req, res) => {
         result[element.username] = element;
     });
 
+    dbConnection.close();
     res.status(200).send(result[req.params.username]);
 });
 
@@ -287,11 +317,13 @@ app.post('/signup', async (req, res) => {
         return;
     }
 
-    const db = await getDb();
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
     const thisUser = await db.collection('users').findOne({ username });
 
     if (thisUser) {
         res.status(400).send('Användarnamnet finns redan');
+        dbConnection.close();
         return;
     }
 
@@ -305,23 +337,28 @@ app.post('/signup', async (req, res) => {
         jwt: userJwt
     };
 
+    dbConnection.close();
     res.status(200).send({ currentUser: result });
 });
 
 app.post('/joingame', async (req, res) => {
-    const db = await getDb();
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
     const thisGame = await db.collection('games').findOne({ gameName: req.body.gameName });
     const thisUser = await db.collection('users').findOne({ username: req.body.username });
 
     if (!thisGame) {
+        dbConnection.close();
         return res.status(400).send('Spelet finns inte');
     }
 
     if (thisGame.players.length === thisGame.maxPlayers) {
+        dbConnection.close();
         return res.status(400).send('Max antal spelare redan uppnått');
     }
 
     if (thisGame.players.length > 0 && thisGame.players[req.body.username]) {
+        dbConnection.close();
         return res.status(400).send('Du är redan med i spelet');
     }
 
@@ -352,22 +389,26 @@ app.post('/joingame', async (req, res) => {
 
     await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { players: thisGame.players } });
 
+    dbConnection.close();
     res.status(200).send('Du är med i spelet');
 });
 
 app.get('/games/:gameName', async (req, res) => {
-    const db = await getDb();
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
     const game = await db.collection('games').findOne({ gameName: req.params.gameName });
 
+    dbConnection.close();
     if (!game) {
         return res.status(400).send('Spelet finns inte');
     }
 
-    res.send(200, game);
+    res.status(200).send(game);
 });
 
 app.get('/games', async (req, res) => {
-    const db = await getDb();
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
     const games = await db.collection('games').find({}).toArray();
     const result = {};
 
@@ -375,16 +416,19 @@ app.get('/games', async (req, res) => {
         result[element.gameName] = element;
     });
 
+    dbConnection.close();
     res.send(200, result);
 });
 
 app.post('/games', async (req, res) => {
     const { gameName, maxPlayers } = req.body;
 
-    const db = await getDb();
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
     const thisGame = await db.collection('games').findOne({ gameName });
 
     if (thisGame) {
+        dbConnection.close();
         return res.status(400).send('Spel med samma namn finns redan');
     }
 
@@ -392,6 +436,7 @@ app.post('/games', async (req, res) => {
 
     const result = { gameName, maxPlayers, players: {}, status: WAITING };
 
+    dbConnection.close();
     res.status(201).send(result);
 });
 
