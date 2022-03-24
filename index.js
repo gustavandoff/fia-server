@@ -207,7 +207,19 @@ io.on('connection', (socket) => {
         } finally {
             dbConnection.close();
         }
-    })
+    });
+
+    socket.on('updateGameBoard', async ({ game, user, players }) => {
+        const gameName = game.gameName;
+
+        const dbConnection = await getMongoConnection();
+        const db = dbConnection.db('fia');
+
+        await db.collection('games').updateOne({ gameName }, { $set: { players } });
+
+        dbConnection.close();
+        socket.to(gameName).emit('updateGamePlayers', players); // skickar till alla andra i spelet
+    });
 
     socket.on('disconnect', () => {
         console.log('User disconnected', socket.id);
@@ -270,7 +282,7 @@ app.get('/currentuser', async (req, res) => {
         if (!exists) {
             return res.status(401).send({ currentUser: undefined });
         }
-        res.send({ currentUser: payload });
+        res.statis(200).send({ currentUser: payload });
     } catch (err) {
         console.error('err:', err);
         return res.status(401).send({ currentUser: undefined });
@@ -281,13 +293,32 @@ app.get('/currentuser', async (req, res) => {
 
 app.post('/logout', async (req, res) => {
     const token = getToken(req);
+    let dbConnection;
+    console.log(token);
+
     if (!token) {
+        return res.send();
+    }
+    console.log(token);
+
+    try {
+        const payload = jwt.verify(
+            token,
+            'asdf'
+        );
+        dbConnection = await getMongoConnection();
+        const db = dbConnection.db('fia');
+        const exists = await db.collection('users').findOne({ jwt: token });
+
+        if (!exists) {
+            dbConnection.close();
+            return res.status(401).send();
+        }
+    } catch (err) {
+        console.error('err:', err);
+        dbConnection.close();
         return res.status(401).send();
     }
-
-    const dbConnection = await getMongoConnection();
-    const db = dbConnection.db('fia');
-    const currentUser = await db.collection('users').findOne({ jwt: token });
 
     await db.collection('users').updateOne({ username: currentUser.username }, { $set: { jwt: null } });
 
