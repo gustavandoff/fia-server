@@ -79,10 +79,6 @@ io.on('connection', (socket) => {
 
         await db.collection('games').updateOne({ gameName }, { $set: { players: game.players } });
 
-        //await db.collection('games').update({ gameName }, { $unset: { description: 1 } })
-        //await db.collection('games').updateOne({ gameName }, { $unset: { players.(currentUser.username) } });
-        //db.games.update({ gameName }, { "$unset": { "values.727920": "" } });
-        //  
         dbConnection.close();
         socket.emit('updateGame', game); // skickar till mig själv
         socket.to(gameName).emit('updateGame', game); // skickar till alla andra i spelet
@@ -211,6 +207,19 @@ io.on('connection', (socket) => {
 
     socket.on('updateGameBoard', async ({ game, user, players }) => {
         const gameName = game.gameName;
+        const turn = game.turn;
+
+        for (let i = 0; i < Object.keys(players); i++) {
+            if (turn === player.username) {
+                if (i + 1 === game.maxPlayers) {
+                    turn = players[Object.keys(players)[0]];
+                } else {
+                    turn = players[Object.keys(players)[i + 1]];
+                }
+
+                break;
+            }
+        }
 
         const dbConnection = await getMongoConnection();
         const db = dbConnection.db('fia');
@@ -467,7 +476,7 @@ app.get('/games', async (req, res) => {
     });
 
     dbConnection.close();
-    res.send(200, result);
+    res.status(200).send(result);
 });
 
 app.post('/games', async (req, res) => {
@@ -482,7 +491,7 @@ app.post('/games', async (req, res) => {
         return res.status(400).send('Spel med samma namn finns redan');
     }
 
-    await db.collection('games').insertOne({ gameName, maxPlayers, players: {}, status: WAITING });
+    await db.collection('games').insertOne({ gameName, maxPlayers, players: {}, turn: null, status: WAITING });
 
     const result = { gameName, maxPlayers, players: {}, status: WAITING };
 
@@ -492,7 +501,7 @@ app.post('/games', async (req, res) => {
 
 app.get('/dice', (req, res) => {
     const d = Math.floor(Math.random() * 6) + 1;
-    res.send(200, d);
+    res.status(200).send('' + d);
 });
 
 //app.listen(4000, () => {
