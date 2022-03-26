@@ -303,6 +303,7 @@ app.get('/currentuser', async (req, res) => {
 app.post('/logout', async (req, res) => {
     const token = getToken(req);
     let dbConnection;
+    let db;
     console.log(token);
 
     if (!token) {
@@ -316,7 +317,7 @@ app.post('/logout', async (req, res) => {
             'asdf'
         );
         dbConnection = await getMongoConnection();
-        const db = dbConnection.db('fia');
+        db = dbConnection.db('fia');
         const exists = await db.collection('users').findOne({ jwt: token });
 
         if (!exists) {
