@@ -166,7 +166,6 @@ io.on('connection', (socket) => {
 
             thisGame.players[thisUser.username] = {
                 username: thisUser.username,
-                displayname: thisUser.displayname,
                 playerNumber: null,
                 color: data.color,
                 pieces: [
@@ -277,14 +276,12 @@ app.post('/login', async (req, res) => {
 
     const userJwt = jwt.sign({
         username: thisUser.username,
-        displayname: thisUser.displayname
     }, 'asdf');
 
     await db.collection('users').updateOne({ username }, { $set: { jwt: userJwt } });
 
     const result = {
         username: thisUser.username,
-        displayname: thisUser.displayname,
         jwt: userJwt
     };
 
@@ -387,9 +384,9 @@ app.get('/users/:username', async (req, res) => {
 });
 
 app.post('/signup', async (req, res) => {
-    const { username, displayname, password, confPassword } = req.body;
+    const { username, password, confPassword } = req.body;
 
-    if (!username || !displayname || !password || !confPassword) {
+    if (!username || !password || !confPassword) {
         return res.status(400).send('Vänligen fyll i alla fält');
     }
 
@@ -411,13 +408,12 @@ app.post('/signup', async (req, res) => {
         return;
     }
 
-    const userJwt = jwt.sign({ username, displayname }, 'asdf');
+    const userJwt = jwt.sign({ username }, 'asdf');
 
-    await db.collection('users').insertOne({ username, displayname, password, jwt: userJwt });
+    await db.collection('users').insertOne({ username, password, jwt: userJwt });
 
     const result = {
         username,
-        displayname,
         jwt: userJwt
     };
 
@@ -448,7 +444,6 @@ app.post('/joingame', async (req, res) => {
 
     thisGame.players[thisUser.username] = {
         username: thisUser.username,
-        displayname: thisUser.displayname,
         playerNumber: null,
         color: null,
         pieces: [
