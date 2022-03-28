@@ -425,7 +425,6 @@ app.post('/joingame', async (req, res) => {
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
     const thisGame = await db.collection('games').findOne({ gameName: req.body.gameName });
-    const thisUser = await db.collection('users').findOne({ username: req.body.username });
 
     if (!thisGame) {
         dbConnection.close();
@@ -442,8 +441,8 @@ app.post('/joingame', async (req, res) => {
         return res.status(200).send('Du är redan med i spelet');
     }
 
-    thisGame.players[thisUser.username] = {
-        username: thisUser.username,
+    thisGame.players[req.body.username] = {
+        username: req.body.username,
         playerNumber: null,
         color: null,
         pieces: [
