@@ -124,7 +124,7 @@ io.on('connection', (socket) => {
 
             console.log(players);
 
-            await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { status: PLAYING, players } });
+            await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { status: PLAYING, players, turn: Object.keys(players)[0] } });
             const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
 
             socket.emit('updateGame', updatedGame); // skickar till mig själv
@@ -141,7 +141,6 @@ io.on('connection', (socket) => {
         const token = thisUser?.jwt;
         const thisGame = data.game;
         let dbConnection;
-
 
         if (!token) {
             return;
@@ -205,29 +204,51 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('updateGameBoard', async ({ game, user, players }) => {
+    socket.on('updateGameBoard', async ({ game, user, players, nextTurn }) => {
         const gameName = game.gameName;
-        const turn = game.turn;
-
-        for (let i = 0; i < Object.keys(players); i++) {
-            if (turn === player.username) {
-                if (i + 1 === game.maxPlayers) {
-                    turn = players[Object.keys(players)[0]];
-                } else {
-                    turn = players[Object.keys(players)[i + 1]];
-                }
-
-                break;
-            }
-        }
 
         const dbConnection = await getMongoConnection();
         const db = dbConnection.db('fia');
+        const dbGame = await db.collection('games').findOne({ gameName });
 
-        await db.collection('games').updateOne({ gameName }, { $set: { players } });
+        console.log('game sequence: ', game.sequence);
+        console.log('dbGame sequence: ', dbGame.sequence);
+
+        const calcNextTurn = (turn) => {
+            for (let i = 0; i < Object.keys(players).length; i++) {
+                const player = players[Object.keys(players)[i]]
+                console.log('turn: ', turn, ', player.username: ', player.username);
+                if (turn === player.username) {
+                    console.log('player.username:', player.username);
+                    if (i + 1 === Object.keys(players).length) {
+                        return turn = Object.keys(players)[0];
+                    } else {
+                        return turn = Object.keys(players)[i + 1];
+                    }
+                }
+            }
+        }
+
+        let turn = dbGame.turn;
+        let sequence = dbGame.sequence;
+
+        console.log('turn1', turn);
+        if (nextTurn) {
+            do {
+                turn = calcNextTurn(turn);
+                sequence++;
+            } while (!dbGame.players[turn].pieces.find(p => p.position));
+        }
+
+        console.log('turn2', turn);
+
+        await db.collection('games').updateOne({ gameName }, { $set: { players, turn, sequence } });
+        const updatedGame = await db.collection('games').findOne({ gameName });
 
         dbConnection.close();
-        socket.to(gameName).emit('updateGamePlayers', players); // skickar till alla andra i spelet
+
+        socket.emit('updateGame', updatedGame); // skickar till mig själv
+        socket.to(gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
     });
 
     socket.on('disconnect', () => {
@@ -301,6 +322,7 @@ app.get('/currentuser', async (req, res) => {
 });
 
 app.post('/logout', async (req, res) => {
+    const { currentUser } = req.body;
     const token = getToken(req);
     let dbConnection;
     let db;
@@ -368,13 +390,15 @@ app.post('/signup', async (req, res) => {
     const { username, displayname, password, confPassword } = req.body;
 
     if (!username || !displayname || !password || !confPassword) {
-        res.status(400).send('Vänligen fyll i alla fält');
-        return;
+        return res.status(400).send('Vänligen fyll i alla fält');
     }
 
     if (password !== confPassword) {
-        res.status(400).send('Lösenorden matcher inte');
-        return;
+        return res.status(400).send('Lösenorden matcher inte');
+    }
+
+    if (username.startsWith('gäst')) {
+        return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn får inte börja med "gäst"' });
     }
 
     const dbConnection = await getMongoConnection();
@@ -412,14 +436,14 @@ app.post('/joingame', async (req, res) => {
         return res.status(400).send('Spelet finns inte');
     }
 
-    if (thisGame.players.length === thisGame.maxPlayers) {
+    if (Object.keys(thisGame.players).length === thisGame.maxPlayers) {
         dbConnection.close();
         return res.status(400).send('Max antal spelare redan uppnått');
     }
 
-    if (thisGame.players.length > 0 && thisGame.players[req.body.username]) {
+    if (Object.keys(thisGame.players).length > 0 && thisGame.players[req.body.username]) {
         dbConnection.close();
-        return res.status(400).send('Du är redan med i spelet');
+        return res.status(200).send('Du är redan med i spelet');
     }
 
     thisGame.players[thisUser.username] = {
@@ -483,6 +507,10 @@ app.get('/games', async (req, res) => {
 app.post('/games', async (req, res) => {
     const { gameName, maxPlayers } = req.body;
 
+    if (gameName.length > 20) {
+        return res.status(400).send('Spelets namn för högst vara 20 tecken långt');
+    }
+
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
     const thisGame = await db.collection('games').findOne({ gameName });
@@ -494,7 +522,7 @@ app.post('/games', async (req, res) => {
 
     await db.collection('games').insertOne({ gameName, maxPlayers, players: {}, turn: null, status: WAITING });
 
-    const result = { gameName, maxPlayers, players: {}, status: WAITING };
+    const result = { gameName, maxPlayers, players: {}, turn: null, status: WAITING };
 
     dbConnection.close();
     res.status(201).send(result);
