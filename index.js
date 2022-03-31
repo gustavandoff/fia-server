@@ -84,6 +84,53 @@ io.on('connection', (socket) => {
         socket.to(gameName).emit('updateGame', game); // skickar till alla andra i spelet
     });
 
+    socket.on('toggleReady', async (data) => {
+        const thisUser = data.user;
+        const token = thisUser?.jwt;
+        const thisGame = data.game;
+        let dbConnection;
+
+        if (!token) {
+            return;
+        }
+
+        try {
+            const payload = jwt.verify(
+                token,
+                'asdf'
+            );
+            dbConnection = await getMongoConnection();
+            const db = dbConnection.db('fia');
+            const exists = await db.collection('users').findOne({ jwt: token });
+
+            if (!exists) {
+                return;
+            }
+
+            const game = await db.collection('games').findOne({ gameName: thisGame.gameName });
+            if (!game || game.status !== WAITING) {
+                return;
+            }
+
+            thisGame.players[thisUser.username].ready = !thisGame.players[thisUser.username].ready;
+            
+            await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { players: thisGame.players } });
+            const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
+
+            console.log('readyUp socket1:', socket.id);
+            console.log('thisGame.gameName:', thisGame.gameName);
+
+            socket.emit('updateGame', updatedGame); // skickar till mig själv
+            socket.to(thisGame.gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
+
+            console.log('readyUp socket2:', socket.id);
+        } catch (err) {
+            console.error('err:', err);
+        } finally {
+            dbConnection.close();
+        }
+    });
+
     socket.on('startGame', async (data) => {
         const thisUser = data.user;
         const token = thisUser?.jwt;
@@ -115,7 +162,7 @@ io.on('connection', (socket) => {
 
             Object.keys(players).forEach((e, i) => {
                 if (Object.keys(players).length < 4 && i > 0) {
-                    i ++;
+                    i++;
                 }
                 players[e].playerNumber = i + 1;
                 const pieces = players[e].pieces;
@@ -215,6 +262,11 @@ io.on('connection', (socket) => {
 
         console.log('game sequence: ', game.sequence);
         console.log('dbGame sequence: ', dbGame.sequence);
+
+        if (game.sequence !== dbGame.sequence) {
+            console.error('Sequence unsynced');
+            return;
+        }
 
         const calcNextTurn = (turn) => {
             for (let i = 0; i < Object.keys(players).length; i++) {
@@ -434,6 +486,11 @@ app.post('/joingame', async (req, res) => {
         return res.status(400).send('Spelet finns inte');
     }
 
+    if (Object.keys(thisGame.players).length > 0 && thisGame.players[req.body.username]) {
+        dbConnection.close();
+        return res.status(200).send('Du är redan med i spelet');
+    }
+
     if (Object.keys(thisGame.players).length === thisGame.maxPlayers) {
         dbConnection.close();
         return res.status(400).send('Max antal spelare redan uppnått');
@@ -444,15 +501,11 @@ app.post('/joingame', async (req, res) => {
         return res.status(401).send('Spelet har redan startat');
     }
 
-    if (Object.keys(thisGame.players).length > 0 && thisGame.players[req.body.username]) {
-        dbConnection.close();
-        return res.status(200).send('Du är redan med i spelet');
-    }
-
     thisGame.players[req.body.username] = {
         username: req.body.username,
         playerNumber: null,
         color: null,
+        ready: false,
         pieces: [
             {
                 number: 0,
