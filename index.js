@@ -114,6 +114,9 @@ io.on('connection', (socket) => {
             }
 
             Object.keys(players).forEach((e, i) => {
+                if (Object.keys(players).length < 4 && i > 0) {
+                    i ++;
+                }
                 players[e].playerNumber = i + 1;
                 const pieces = players[e].pieces;
                 pieces[0].position = -players[e].playerNumber * 10 - 1;
@@ -436,6 +439,11 @@ app.post('/joingame', async (req, res) => {
         return res.status(400).send('Max antal spelare redan uppnått');
     }
 
+    if (thisGame.status !== WAITING) {
+        dbConnection.close();
+        return res.status(401).send('Spelet har redan startat');
+    }
+
     if (Object.keys(thisGame.players).length > 0 && thisGame.players[req.body.username]) {
         dbConnection.close();
         return res.status(200).send('Du är redan med i spelet');
@@ -501,8 +509,16 @@ app.get('/games', async (req, res) => {
 app.post('/games', async (req, res) => {
     const { gameName, maxPlayers } = req.body;
 
+    const approvedCharacters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+    for (let i = 0; i < gameName.length; i++) {
+        if (!approvedCharacters.includes(gameName[i])) {
+            return res.status(400).send('Får bara innehålla bokstäver A-Z och siffor 0-9');
+        }
+    }
+
     if (gameName.length > 20) {
-        return res.status(400).send('Spelets namn för högst vara 20 tecken långt');
+        return res.status(400).send('Spelets namn får högst vara 20 tecken långt');
     }
 
     const dbConnection = await getMongoConnection();
