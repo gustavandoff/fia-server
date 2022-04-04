@@ -203,9 +203,9 @@ io.on('connection', (socket) => {
             );
             dbConnection = await getMongoConnection();
             const db = dbConnection.db('fia');
-            const exists = await db.collection('users').findOne({ jwt: token });
+            const dbThisUser = await db.collection('users').findOne({ jwt: token });
 
-            if (!exists) {
+            if (!dbThisUser) {
                 return;
             }
 
