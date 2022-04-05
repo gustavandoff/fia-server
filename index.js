@@ -113,7 +113,7 @@ io.on('connection', (socket) => {
             }
 
             thisGame.players[thisUser.username].ready = !thisGame.players[thisUser.username].ready;
-            
+
             await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { players: thisGame.players } });
             const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
 
@@ -559,14 +559,33 @@ app.get('/games', async (req, res) => {
     res.status(200).send(result);
 });
 
+app.get('/gamesUser/:username', async (req, res) => {
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
+    const games = await db.collection('games').find({}).toArray();
+    const thisUsername = req.params.username;
+    const result = {};
+
+    games.forEach(game => {
+        const players = game.players;
+        const isInGame = Object.keys(players).find(username => username === thisUsername);
+        if (isInGame) {
+            result[game.gameName] = game;
+        }
+    });
+    
+    dbConnection.close();
+    res.status(200).send(result);
+});
+
 app.post('/games', async (req, res) => {
     const { gameName, maxPlayers } = req.body;
 
-    const approvedCharacters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const approvedCharacters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz 0123456789_-';
 
     for (let i = 0; i < gameName.length; i++) {
         if (!approvedCharacters.includes(gameName[i])) {
-            return res.status(400).send('Får bara innehålla bokstäver A-Z och siffor 0-9');
+            return res.status(400).send('Får bara innehålla tecken "_" och "-" och bokstäver A-Z och siffor 0-9');
         }
     }
 
