@@ -285,18 +285,35 @@ io.on('connection', (socket) => {
 
         let turn = dbGame.turn;
         let sequence = dbGame.sequence;
+        let diceRoll = dbGame.diceRoll;
 
         console.log('turn1', turn);
         if (nextTurn) {
             do {
                 turn = calcNextTurn(turn);
-                sequence++;
-            } while (!dbGame.players[turn].pieces.find(p => p.position));
+            } while (!dbGame.players[turn].pieces.find(p => p.position)); // om en spelare inte har några pjäser kvar på brädet ska det inte bli dess tur
+            diceRoll = null;
+            sequence++;
         }
 
         console.log('turn2', turn);
 
-        await db.collection('games').updateOne({ gameName }, { $set: { players, turn, sequence } });
+        await db.collection('games').updateOne({ gameName }, { $set: { players, turn, diceRoll, sequence } });
+        const updatedGame = await db.collection('games').findOne({ gameName });
+
+        dbConnection.close();
+
+        socket.emit('updateGame', updatedGame); // skickar till mig själv
+        socket.to(gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
+    });
+
+    socket.on('updateGameDiceRoll', async ({ game, newDiceRoll }) => {
+        const gameName = game.gameName;
+
+        const dbConnection = await getMongoConnection();
+        const db = dbConnection.db('fia');
+
+        await db.collection('games').updateOne({ gameName }, { $set: { diceRoll: newDiceRoll } });
         const updatedGame = await db.collection('games').findOne({ gameName });
 
         dbConnection.close();
@@ -573,7 +590,7 @@ app.get('/gamesUser/:username', async (req, res) => {
             result[game.gameName] = game;
         }
     });
-    
+
     dbConnection.close();
     res.status(200).send(result);
 });
@@ -602,9 +619,9 @@ app.post('/games', async (req, res) => {
         return res.status(400).send('Spel med samma namn finns redan');
     }
 
-    await db.collection('games').insertOne({ gameName, maxPlayers, players: {}, turn: null, status: WAITING });
+    await db.collection('games').insertOne({ gameName, maxPlayers, players: {}, turn: null, status: WAITING, diceRoll: null, sequence: 0 });
 
-    const result = { gameName, maxPlayers, players: {}, turn: null, status: WAITING };
+    const result = { gameName, maxPlayers, players: {}, turn: null, status: WAITING, diceRoll: null, sequence: 0 };
 
     dbConnection.close();
     res.status(201).send(result);
@@ -614,6 +631,23 @@ app.get('/dice', (req, res) => {
     const d = Math.floor(Math.random() * 6) + 1;
     res.status(200).send('' + d);
 });
+
+app.get('/gameDiceRoll/:gameName', async (req, res) => {
+    const dbConnection = await getMongoConnection();
+    const db = dbConnection.db('fia');
+    const game = await db.collection('games').findOne({ gameName: req.params.gameName });
+
+    if (!game) {
+        return res.status(400).send('Spelet finns inte');
+    }
+
+    let currentDiceRoll = game.diceRoll;
+
+    dbConnection.close();
+    res.status(200).send('' + currentDiceRoll);
+});
+
+
 
 //app.listen(4000, () => {
 //    console.log('Listening on 4000');
