@@ -19,7 +19,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: `http://172.31.204.128:3000`
+        origin: `http://localhost:3000`
     }
 });
 
@@ -90,21 +90,29 @@ io.on('connection', (socket) => {
         const thisGame = data.game;
         let dbConnection;
 
-        if (!token) {
+        if (!thisUser.username.startsWith('gäst') && !token) {
             return;
         }
 
         try {
-            const payload = jwt.verify(
-                token,
-                'asdf'
-            );
+            if (!thisUser.username.startsWith('gäst')) {
+                const payload = jwt.verify(
+                    token,
+                    'asdf'
+                );
+            }
+
             dbConnection = await getMongoConnection();
             const db = dbConnection.db('fia');
-            const exists = await db.collection('users').findOne({ jwt: token });
-
-            if (!exists) {
-                return;
+            
+            let dbThisUser;
+            if (thisUser.username.startsWith('gäst')) {
+                dbThisUser = await db.collection('users').findOne({ username: thisUser.username });
+            } else {
+                dbThisUser = await db.collection('users').findOne({ jwt: token });
+                if (!dbThisUser) {
+                    return;
+                }
             }
 
             const game = await db.collection('games').findOne({ gameName: thisGame.gameName });
@@ -138,20 +146,29 @@ io.on('connection', (socket) => {
         const players = thisGame.players;
         let dbConnection;
 
-        if (!token) return;
+        if (!thisUser.username.startsWith('gäst') && !token) {
+            return;
+        }
 
         try {
-            const payload = jwt.verify(
-                token,
-                'asdf'
-            );
+            if (!thisUser.username.startsWith('gäst')) {
+                const payload = jwt.verify(
+                    token,
+                    'asdf'
+                );
+            }
+
             dbConnection = await getMongoConnection();
             const db = dbConnection.db('fia');
-            const exists = await db.collection('users').findOne({ jwt: token });
 
-            if (!exists) {
-                console.log('Spelet finns inte');
-                return;
+            let dbThisUser;
+            if (thisUser.username.startsWith('gäst')) {
+                dbThisUser = await db.collection('users').findOne({ username: thisUser.username });
+            } else {
+                dbThisUser = await db.collection('users').findOne({ jwt: token });
+                if (!dbThisUser) {
+                    return;
+                }
             }
 
             const game = await db.collection('games').findOne({ gameName: thisGame.gameName });
@@ -191,22 +208,30 @@ io.on('connection', (socket) => {
         const token = thisUser?.jwt;
         const thisGame = data.game;
         let dbConnection;
-
-        if (!token) {
+        console.log('gameLobbyPickColor thisUser:', thisUser);
+        if (!thisUser.username.startsWith('gäst') && !token) {
             return;
         }
 
         try {
-            const payload = jwt.verify(
-                token,
-                'asdf'
-            );
+            if (!thisUser.username.startsWith('gäst')) {
+                const payload = jwt.verify(
+                    token,
+                    'asdf'
+                );
+            }
+
             dbConnection = await getMongoConnection();
             const db = dbConnection.db('fia');
-            const dbThisUser = await db.collection('users').findOne({ jwt: token });
 
-            if (!dbThisUser) {
-                return;
+            let dbThisUser;
+            if (thisUser.username.startsWith('gäst')) {
+                dbThisUser = await db.collection('users').findOne({ username: thisUser.username });
+            } else {
+                dbThisUser = await db.collection('users').findOne({ jwt: token });
+                if (!dbThisUser) {
+                    return;
+                }
             }
 
             const game = await db.collection('games').findOne({ gameName: thisGame.gameName });
@@ -598,11 +623,11 @@ app.get('/gamesUser/:username', async (req, res) => {
 app.post('/games', async (req, res) => {
     const { gameName, maxPlayers } = req.body;
 
-    const approvedCharacters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz 0123456789_-';
+    const approvedCharacters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖabcdefghijklmnopqrstuvwxyzåäö 0123456789_-';
 
     for (let i = 0; i < gameName.length; i++) {
         if (!approvedCharacters.includes(gameName[i])) {
-            return res.status(400).send('Får bara innehålla tecken "_" och "-" och bokstäver A-Z och siffor 0-9');
+            return res.status(400).send('Får bara innehålla tecken "_" och "-" och bokstäver A-Ö och siffor 0-9');
         }
     }
 
