@@ -1,5 +1,5 @@
 const express = require('express');
-const { randomBytes } = require('crypto');
+const bcrypt = require("bcrypt");
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -19,7 +19,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: `http://localhost:3000`
+        origin: `http://172.31.204.138:3000`
     }
 });
 
@@ -104,7 +104,7 @@ io.on('connection', (socket) => {
 
             dbConnection = await getMongoConnection();
             const db = dbConnection.db('fia');
-            
+
             let dbThisUser;
             if (thisUser.username.startsWith('gäst')) {
                 dbThisUser = await db.collection('users').findOne({ username: thisUser.username });
@@ -359,31 +359,43 @@ app.post('/login', async (req, res) => {
 
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
-    const thisUser = await db.collection('users').findOne({ username });
+    const dbUser = await db.collection('users').findOne({ username });
 
-    if (!thisUser) {
+    if (!dbUser) {
         dbConnection.close();
         return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
     }
 
-    if (thisUser.password !== password) {
+    bcrypt.compare(password, dbUser.password, async (err, correctPassword) => { // jämför det hashade lösenordet i databasen med det som skickas in
+        if (err) {
+            console.error('fel vid jämförelse av lösenord');
+            dbConnection.close();
+            return res.status(400).send('Fel vid saltgenerering vid hashning av lösenord');
+        }
+
+        if (!correctPassword) { // om lösenorden inte är samma
+            console.log('misslyckad jämförelse av lösenord');
+            dbConnection.close();
+            
+            return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
+        }
+
+        console.log('lyckad jämförelse av lösenord');
+
+        const userJwt = jwt.sign({
+            username,
+        }, 'asdf');
+
+        await db.collection('users').updateOne({ username }, { $set: { jwt: userJwt } });
+
+        const result = {
+            username,
+            jwt: userJwt
+        };
+
         dbConnection.close();
-        return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
-    }
-
-    const userJwt = jwt.sign({
-        username: thisUser.username,
-    }, 'asdf');
-
-    await db.collection('users').updateOne({ username }, { $set: { jwt: userJwt } });
-
-    const result = {
-        username: thisUser.username,
-        jwt: userJwt
-    };
-
-    dbConnection.close();
-    res.status(200).send({ currentUser: result });
+        res.status(200).send({ currentUser: result });
+    });
 });
 
 app.get('/currentuser', async (req, res) => {
@@ -402,7 +414,7 @@ app.get('/currentuser', async (req, res) => {
         dbConnection = await getMongoConnection();
         const db = dbConnection.db('fia');
         const exists = await db.collection('users').findOne({ jwt: token });
-        //const exists = Object.values(users).find(u => u.jwt === token);
+
         if (!exists) {
             return res.status(401).send({ currentUser: undefined });
         }
@@ -507,15 +519,27 @@ app.post('/signup', async (req, res) => {
 
     const userJwt = jwt.sign({ username }, 'asdf');
 
-    await db.collection('users').insertOne({ username, password, jwt: userJwt });
+    bcrypt.genSalt(10, (err, salt) => { // generar salt inför hasning och kör callback
+        if (err) {
+            return res.status(400).send('Fel vid saltgenerering vid hashning av lösenord');
+        }
 
-    const result = {
-        username,
-        jwt: userJwt
-    };
+        bcrypt.hash(password, salt, async (err, hash) => { // hashar password med saltet och kör callback
+            if (err) {
+                return res.status(400).send('Fel vid hashning av lösenord');
+            }
 
-    dbConnection.close();
-    res.status(200).send({ currentUser: result });
+            await db.collection('users').insertOne({ username, password: hash, jwt: userJwt }); // skapar ny user i users med användarnamn, hashat lösenord och sparar jwt (man loggas in direkt)
+
+            const result = {
+                username,
+                jwt: userJwt
+            };
+
+            dbConnection.close();
+            return res.status(200).send({ currentUser: result });
+        });
+    });
 });
 
 app.post('/joingame', async (req, res) => {
@@ -671,12 +695,6 @@ app.get('/gameDiceRoll/:gameName', async (req, res) => {
     dbConnection.close();
     res.status(200).send('' + currentDiceRoll);
 });
-
-
-
-//app.listen(4000, () => {
-//    console.log('Listening on 4000');
-//});
 
 server.listen(4000, () => {
     console.log('Listening on 4000');
