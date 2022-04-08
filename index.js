@@ -19,7 +19,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: `http://172.31.204.138:3000`
+        origin: `http://localhost:3000`
     }
 });
 
@@ -521,11 +521,13 @@ app.post('/signup', async (req, res) => {
 
     bcrypt.genSalt(10, (err, salt) => { // generar salt inför hasning och kör callback
         if (err) {
+            dbConnection.close();
             return res.status(400).send('Fel vid saltgenerering vid hashning av lösenord');
         }
 
         bcrypt.hash(password, salt, async (err, hash) => { // hashar password med saltet och kör callback
             if (err) {
+                dbConnection.close();
                 return res.status(400).send('Fel vid hashning av lösenord');
             }
 
@@ -685,6 +687,7 @@ app.get('/gameDiceRoll/:gameName', async (req, res) => {
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
     const game = await db.collection('games').findOne({ gameName: req.params.gameName });
+    dbConnection.close();
 
     if (!game) {
         return res.status(400).send('Spelet finns inte');
@@ -692,7 +695,6 @@ app.get('/gameDiceRoll/:gameName', async (req, res) => {
 
     let currentDiceRoll = game.diceRoll;
 
-    dbConnection.close();
     res.status(200).send('' + currentDiceRoll);
 });
 
