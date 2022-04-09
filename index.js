@@ -595,9 +595,10 @@ app.post('/joingame', async (req, res) => {
     };
 
     await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { players: thisGame.players } });
+    const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
 
     dbConnection.close();
-    res.status(200).send('Du är med i spelet');
+    res.status(200).send(updatedGame);
 });
 
 app.get('/games/:gameName', async (req, res) => {
