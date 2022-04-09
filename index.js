@@ -125,13 +125,8 @@ io.on('connection', (socket) => {
             await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { players: thisGame.players } });
             const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
 
-            console.log('readyUp socket1:', socket.id);
-            console.log('thisGame.gameName:', thisGame.gameName);
-
             socket.emit('updateGame', updatedGame); // skickar till mig själv
             socket.to(thisGame.gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
-
-            console.log('readyUp socket2:', socket.id);
         } catch (err) {
             console.error('err:', err);
         } finally {
@@ -189,8 +184,6 @@ io.on('connection', (socket) => {
                 pieces[3].position = -players[e].playerNumber * 10 - 4;
             });
 
-            console.log(players);
-
             await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { status: PLAYING, players, turn: Object.keys(players)[0] } });
             const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
 
@@ -208,7 +201,8 @@ io.on('connection', (socket) => {
         const token = thisUser?.jwt;
         const thisGame = data.game;
         let dbConnection;
-        console.log('gameLobbyPickColor thisUser:', thisUser);
+        console.log('gameLobbyPickColor thisUser.username:', thisUser.username);
+        console.log('gameLobbyPickColor thisGame.gameName:', thisGame.gameName);
         if (!thisUser.username.startsWith('gäst') && !token) {
             return;
         }
@@ -264,13 +258,9 @@ io.on('connection', (socket) => {
             };
             await db.collection('games').updateOne({ gameName: thisGame.gameName }, { $set: { players: thisGame.players } });
             const updatedGame = await db.collection('games').findOne({ gameName: thisGame.gameName });
-            console.log('pickColor socket1:', socket.id);
-            console.log('thisGame.gameName:', thisGame.gameName);
 
             socket.emit('updateGame', updatedGame); // skickar till mig själv
             socket.to(thisGame.gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
-
-            console.log('pickColor socket2:', socket.id);
         } catch (err) {
             console.error('err:', err);
         } finally {
@@ -296,9 +286,7 @@ io.on('connection', (socket) => {
         const calcNextTurn = (turn) => {
             for (let i = 0; i < Object.keys(players).length; i++) {
                 const player = players[Object.keys(players)[i]]
-                console.log('turn: ', turn, ', player.username: ', player.username);
                 if (turn === player.username) {
-                    console.log('player.username:', player.username);
                     if (i + 1 === Object.keys(players).length) {
                         return turn = Object.keys(players)[0];
                     } else {
@@ -312,16 +300,15 @@ io.on('connection', (socket) => {
         let sequence = dbGame.sequence;
         let diceRoll = dbGame.diceRoll;
 
-        console.log('turn1', turn);
         if (nextTurn) {
             do {
+                console.log('Just played: ', turn);
                 turn = calcNextTurn(turn);
+                console.log('New turn: ', turn);
             } while (!dbGame.players[turn].pieces.find(p => p.position)); // om en spelare inte har några pjäser kvar på brädet ska det inte bli dess tur
             diceRoll = null;
             sequence++;
         }
-
-        console.log('turn2', turn);
 
         await db.collection('games').updateOne({ gameName }, { $set: { players, turn, diceRoll, sequence } });
         const updatedGame = await db.collection('games').findOne({ gameName });
@@ -374,7 +361,7 @@ app.post('/login', async (req, res) => {
         }
 
         if (!correctPassword) { // om lösenorden inte är samma
-            console.log('misslyckad jämförelse av lösenord');
+            console.error('misslyckad jämförelse av lösenord');
             dbConnection.close();
             
             return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
@@ -432,12 +419,10 @@ app.post('/logout', async (req, res) => {
     const token = getToken(req);
     let dbConnection;
     let db;
-    console.log(token);
 
     if (!token) {
         return res.send();
     }
-    console.log(token);
 
     try {
         const payload = jwt.verify(
