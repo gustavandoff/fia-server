@@ -370,7 +370,7 @@ app.post('/login', async (req, res) => {
         if (err) {
             console.error('fel vid jämförelse av lösenord');
             dbConnection.close();
-            return res.status(400).send('Fel vid saltgenerering vid hashning av lösenord');
+            return res.status(400).send('Fel vid inloggning');
         }
 
         if (!correctPassword) { // om lösenorden inte är samma
