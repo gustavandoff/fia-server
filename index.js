@@ -350,21 +350,21 @@ app.post('/login', async (req, res) => {
 
     if (!dbUser) {
         dbConnection.close();
-        return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
+        return res.status(401).send('Ditt användarnamn eller lösenord är felaktigt');
     }
 
     bcrypt.compare(password, dbUser.password, async (err, correctPassword) => { // jämför det hashade lösenordet i databasen med det som skickas in
         if (err) {
             console.error('fel vid jämförelse av lösenord');
             dbConnection.close();
-            return res.status(400).send('Fel vid inloggning');
+            return res.status(400).send('Fel vid inloggning. Försök igen');
         }
 
         if (!correctPassword) { // om lösenorden inte är samma
             console.error('misslyckad jämförelse av lösenord');
             dbConnection.close();
             
-            return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn eller lösenord är felaktigt' });
+            return res.status(401).send('Ditt användarnamn eller lösenord är felaktigt');
         }
 
         console.log('lyckad jämförelse av lösenord');
@@ -390,7 +390,7 @@ app.get('/currentuser', async (req, res) => {
     let dbConnection;
 
     if (!token) {
-        return res.status(401).send({ jwt: undefined });
+        return res.status(401).send();
     }
 
     try {
@@ -403,12 +403,12 @@ app.get('/currentuser', async (req, res) => {
         const exists = await db.collection('users').findOne({ jwt: token });
 
         if (!exists) {
-            return res.status(401).send({ currentUser: undefined });
+            return res.status(401).send();
         }
         res.statis(200).send({ currentUser: payload });
     } catch (err) {
         console.error('err:', err);
-        return res.status(401).send({ currentUser: undefined });
+        return res.status(401).send();
     } finally {
         dbConnection.close();
     }
@@ -425,22 +425,22 @@ app.post('/logout', async (req, res) => {
     }
 
     try {
-        const payload = jwt.verify(
+        jwt.verify(
             token,
             'asdf'
         );
         dbConnection = await getMongoConnection();
         db = dbConnection.db('fia');
-        const exists = await db.collection('users').findOne({ jwt: token });
+        const thisUser = await db.collection('users').findOne({ jwt: token });
 
-        if (!exists) {
+        if (!thisUser) {
             dbConnection.close();
             return res.status(401).send();
         }
     } catch (err) {
         console.error('err:', err);
         dbConnection.close();
-        return res.status(401).send();
+        return res.status(400).send();
     }
 
     await db.collection('users').updateOne({ username: currentUser.username }, { $set: { jwt: null } });
@@ -481,7 +481,7 @@ app.post('/signup', async (req, res) => {
     const { username, password, confPassword } = req.body;
 
     if (!username || !password || !confPassword) {
-        return res.status(400).send('Vänligen fyll i alla fält');
+        return res.status(400).send('Fyll i alla fälten');
     }
 
     if (password !== confPassword) {
@@ -489,7 +489,7 @@ app.post('/signup', async (req, res) => {
     }
 
     if (username.startsWith('gäst')) {
-        return res.status(400).send({ jwt: undefined, message: 'Ditt användarnamn får inte börja med "gäst"' });
+        return res.status(400).send('Ditt användarnamn får inte börja med "gäst"');
     }
 
     const dbConnection = await getMongoConnection();
@@ -507,13 +507,13 @@ app.post('/signup', async (req, res) => {
     bcrypt.genSalt(10, (err, salt) => { // generar salt inför hasning och kör callback
         if (err) {
             dbConnection.close();
-            return res.status(400).send('Fel vid saltgenerering vid hashning av lösenord');
+            return res.status(400).send('Fel vid skapande av konto. Försök igen');
         }
 
         bcrypt.hash(password, salt, async (err, hash) => { // hashar password med saltet och kör callback
             if (err) {
                 dbConnection.close();
-                return res.status(400).send('Fel vid hashning av lösenord');
+                return res.status(400).send('Fel vid skapande av konto. Försök igen');
             }
 
             await db.collection('users').insertOne({ username, password: hash, jwt: userJwt }); // skapar ny user i users med användarnamn, hashat lösenord och sparar jwt (man loggas in direkt)
@@ -639,7 +639,7 @@ app.post('/games', async (req, res) => {
 
     for (let i = 0; i < gameName.length; i++) {
         if (!approvedCharacters.includes(gameName[i])) {
-            return res.status(400).send('Får bara innehålla tecken "_" och "-" och bokstäver A-Ö och siffor 0-9');
+            return res.status(400).send('Får bara innehålla tecken "_", "-", bokstäver A-Ö och siffor 0-9');
         }
     }
 
