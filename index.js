@@ -664,11 +664,6 @@ app.post('/games', async (req, res) => {
     res.status(201).send(result);
 });
 
-app.get('/dice', (req, res) => {
-    const d = Math.floor(Math.random() * 6) + 1;
-    res.status(200).send('' + d);
-});
-
 app.get('/gameDiceRoll/:gameName', async (req, res) => {
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
