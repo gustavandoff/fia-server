@@ -31,7 +31,7 @@ const FINISHED = 'FINISHED';
 
 // Functions
 
-const getMongoConnection = async () => {
+const getMongoConnection = async () => { // etablerar kontakt med databas
     return (await MongoClient.connect(uri, {
         useNewUrlParser: true,
         useUnifiedTopology: true,
@@ -39,7 +39,7 @@ const getMongoConnection = async () => {
     }));
 }
 
-const getToken = (req) => {
+const getToken = (req) => { // hämtar jwt från request
     const authorization = req?.headers?.authorization;
 
     if (!authorization) {
@@ -84,7 +84,7 @@ io.on('connection', (socket) => {
         socket.to(gameName).emit('updateGame', game); // skickar till alla andra i spelet
     });
 
-    socket.on('toggleReady', async (data) => {
+    socket.on('toggleReady', async (data) => { // när en spelare blir redo/inte redo
         const thisUser = data.user;
         const token = thisUser?.jwt;
         const thisGame = data.game;
@@ -196,7 +196,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('gameLobbyPickColor', async (data) => {
+    socket.on('gameLobbyPickColor', async (data) => { // när en spelare väljer en färg i spellobbyn
         const thisUser = data.user;
         const token = thisUser?.jwt;
         const thisGame = data.game;
@@ -268,7 +268,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('updateGameBoard', async ({ game, user, players, nextTurn }) => {
+    socket.on('updateGameBoard', async ({ game, user, players, nextTurn }) => { // uppdaterar spelet för alla spelare
         const gameName = game.gameName;
 
         const dbConnection = await getMongoConnection();
@@ -319,7 +319,7 @@ io.on('connection', (socket) => {
         socket.to(gameName).emit('updateGame', updatedGame); // skickar till alla andra i spelet
     });
 
-    socket.on('updateGameDiceRoll', async ({ game, newDiceRoll }) => {
+    socket.on('updateGameDiceRoll', async ({ game, newDiceRoll }) => { // uppdaterar tärningskastet för alla spelare
         const gameName = game.gameName;
 
         const dbConnection = await getMongoConnection();
@@ -449,7 +449,7 @@ app.post('/logout', async (req, res) => {
     res.status(200).send();
 });
 
-app.get('/users', async (req, res) => {
+app.get('/users', async (req, res) => { // returnerar alla användare
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
     const users = await db.collection('users').find({}).toArray();
@@ -463,7 +463,7 @@ app.get('/users', async (req, res) => {
     res.status(200).send(result);
 });
 
-app.get('/users/:username', async (req, res) => {
+app.get('/users/:username', async (req, res) => { // returenerar användare med specifikt användarnamn
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
     const users = await db.collection('users').find({}).toArray();
@@ -586,7 +586,7 @@ app.post('/joingame', async (req, res) => {
     res.status(200).send(updatedGame);
 });
 
-app.get('/games/:gameName', async (req, res) => {
+app.get('/games/:gameName', async (req, res) => { // returenerar spel med specifikt namn
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
     const game = await db.collection('games').findOne({ gameName: req.params.gameName });
@@ -599,7 +599,7 @@ app.get('/games/:gameName', async (req, res) => {
     res.status(200).send(game);
 });
 
-app.get('/games', async (req, res) => {
+app.get('/games', async (req, res) => { // returenerar alla spel
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
     const games = await db.collection('games').find({}).toArray();
@@ -613,7 +613,7 @@ app.get('/games', async (req, res) => {
     res.status(200).send(result);
 });
 
-app.get('/gamesUser/:username', async (req, res) => {
+app.get('/gamesUser/:username', async (req, res) => { // returenerar alla spel en specifik användare är med i
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
     const games = await db.collection('games').find({}).toArray();
@@ -632,7 +632,7 @@ app.get('/gamesUser/:username', async (req, res) => {
     res.status(200).send(result);
 });
 
-app.post('/games', async (req, res) => {
+app.post('/games', async (req, res) => { // skapar ett spel
     const { gameName, maxPlayers } = req.body;
 
     const approvedCharacters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖabcdefghijklmnopqrstuvwxyzåäö 0123456789_-';
@@ -664,7 +664,7 @@ app.post('/games', async (req, res) => {
     res.status(201).send(result);
 });
 
-app.get('/gameDiceRoll/:gameName', async (req, res) => {
+app.get('/gameDiceRoll/:gameName', async (req, res) => { // // returenerar tärningskastet i ett spel
     const dbConnection = await getMongoConnection();
     const db = dbConnection.db('fia');
     const game = await db.collection('games').findOne({ gameName: req.params.gameName });
